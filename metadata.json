@@ -1,0 +1,6 @@
+{
+  "name": "Petualangan Matematika - Berburu Harta Karun",
+  "description": "Game edukasi interaktif matematika luas bangun datar berbasis petualangan dan QR Code untuk siswa SD.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
