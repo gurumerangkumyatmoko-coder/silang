@@ -3,7 +3,17 @@ import confetti from 'canvas-confetti';
 import { ClientQuestion } from '../types/game';
 import { ShapeDiagram } from './ShapeDiagram';
 import { sounds } from '../utils/audio';
-import { CheckCircle2, XCircle, HelpCircle, ArrowRight, RefreshCw, Send, AlertTriangle } from 'lucide-react';
+import {
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  ArrowRight,
+  RefreshCw,
+  Send,
+  AlertTriangle,
+  Trophy,
+  Sparkles,
+} from 'lucide-react';
 
 interface Props {
   stationCode: string;
@@ -23,8 +33,13 @@ interface Props {
     explanation?: string;
     posCompleted?: boolean;
     allCompleted?: boolean;
+    nextStation?: any;
+    summary?: any;
+    treasureCode?: string;
+    teacherMessage?: string;
   }>;
   onNextQuestion: () => void;
+  onProceedToNextStation: (result: any) => void;
 }
 
 export const QuestionView: React.FC<Props> = ({
@@ -37,10 +52,13 @@ export const QuestionView: React.FC<Props> = ({
   attemptsUsedSoFar,
   onSubmitAnswer,
   onNextQuestion,
+  onProceedToNextStation,
 }) => {
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [typedAnswer, setTypedAnswer] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationWarning, setValidationWarning] = useState<string | null>(null);
+
   const [feedback, setFeedback] = useState<{
     status: 'correct' | 'wrong';
     title: string;
@@ -49,35 +67,57 @@ export const QuestionView: React.FC<Props> = ({
     canRetry?: boolean;
     attemptsLeft?: number;
     points?: number;
+    posCompleted?: boolean;
+    allCompleted?: boolean;
+    rawResult?: any;
   } | null>(null);
 
+  const isLastQuestionOfPos = questionIndex >= totalQuestions - 1;
   const progressPercent = Math.round(((questionIndex + 1) / totalQuestions) * 100);
+
+  const hasOptions = Array.isArray(question.options) && question.options.length > 0;
+  const effectiveAnswer = hasOptions ? selectedOption : typedAnswer;
+  const hasAnswer = effectiveAnswer.trim().length > 0;
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const answerToSubmit = question.type === 'isian_angka' ? typedAnswer : selectedOption;
-    if (!answerToSubmit.trim() || isSubmitting) return;
 
+    if (!hasAnswer) {
+      sounds.playWrong();
+      setValidationWarning(
+        hasOptions
+          ? '⚠️ Silakan pilih salah satu opsi jawaban (A, B, C, atau D) terlebih dahulu!'
+          : '⚠️ Silakan ketik angka jawabanmu pada kolom input terlebih dahulu!'
+      );
+      return;
+    }
+
+    setValidationWarning(null);
     sounds.playClick();
     setIsSubmitting(true);
 
     try {
-      const res = await onSubmitAnswer(answerToSubmit);
+      const res = await onSubmitAnswer(effectiveAnswer);
       if (res.isCorrect) {
         sounds.playSuccess();
-        // Light confetti celebration
+        // Cheerful confetti
         confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 },
+          particleCount: res.posCompleted ? 90 : 50,
+          spread: 70,
+          origin: { y: 0.65 },
         });
 
         setFeedback({
           status: 'correct',
           title: '🎉 BENAR!',
-          message: `Hebat sekali! Kamu berhasil mendapatkan +${res.pointsAwarded} poin!`,
+          message: res.posCompleted
+            ? `Luar biasa! Seluruh 5 soal di ${stationCode} berhasil dijawab dengan benar! (+${res.pointsAwarded} poin)`
+            : `Hebat sekali! Kamu berhasil mendapatkan +${res.pointsAwarded} poin!`,
           explanation: res.explanation,
           points: res.pointsAwarded,
+          posCompleted: res.posCompleted,
+          allCompleted: res.allCompleted,
+          rawResult: res,
         });
       } else {
         sounds.playWrong();
@@ -91,10 +131,14 @@ export const QuestionView: React.FC<Props> = ({
           explanation: res.explanation,
           canRetry: res.canRetry,
           attemptsLeft: res.attemptsLeft,
+          posCompleted: false,
+          allCompleted: false,
+          rawResult: res,
         });
       }
     } catch (err) {
-      console.error(err);
+      console.error('Error submitting answer:', err);
+      setValidationWarning('Terjadi kendala saat memeriksa jawaban. Silakan coba klik submit kembali.');
     } finally {
       setIsSubmitting(false);
     }
@@ -104,17 +148,24 @@ export const QuestionView: React.FC<Props> = ({
     sounds.playClick();
     setSelectedOption('');
     setTypedAnswer('');
-    setFeedback(null);
-    onNextQuestion();
+    setValidationWarning(null);
+
+    if (feedback?.posCompleted) {
+      // Proceed to the next station or treasure victory
+      onProceedToNextStation(feedback.rawResult);
+      setFeedback(null);
+    } else {
+      // Normal next question inside this pos
+      setFeedback(null);
+      onNextQuestion();
+    }
   };
 
   const handleRetryCurrent = () => {
     sounds.playClick();
     setFeedback(null);
+    setValidationWarning(null);
   };
-
-  const isAnswerProvided =
-    question.type === 'isian_angka' ? typedAnswer.trim().length > 0 : selectedOption.length > 0;
 
   return (
     <div className="bg-white rounded-3xl shadow-xl border-3 border-amber-300 overflow-hidden max-w-xl mx-auto">
@@ -178,6 +229,14 @@ export const QuestionView: React.FC<Props> = ({
         {/* Geometric Shape Diagram (SVG) */}
         {question.diagram && <ShapeDiagram diagram={question.diagram} />}
 
+        {/* Validation Warning Alert */}
+        {validationWarning && (
+          <div className="p-3 bg-amber-100 border-2 border-amber-400 text-amber-900 rounded-2xl text-xs font-bold flex items-center gap-2 animate-bounce">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{validationWarning}</span>
+          </div>
+        )}
+
         {/* Feedback Alert if Answered */}
         {feedback && (
           <div
@@ -194,11 +253,14 @@ export const QuestionView: React.FC<Props> = ({
                 <XCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
               )}
               <div className="flex-1">
-                <h4 className="font-extrabold text-base">{feedback.title}</h4>
+                <h4 className="font-extrabold text-base flex items-center gap-1.5">
+                  {feedback.title}
+                  {feedback.posCompleted && <Trophy className="w-4 h-4 text-amber-600" />}
+                </h4>
                 <p className="text-xs mt-1 font-medium">{feedback.message}</p>
 
                 {feedback.explanation && (
-                  <div className="mt-2.5 p-2.5 bg-white/80 rounded-xl border border-amber-200/60 text-xs">
+                  <div className="mt-2.5 p-2.5 bg-white/90 rounded-xl border border-amber-200 text-xs shadow-2xs">
                     <span className="font-bold text-amber-900 block mb-0.5">💡 Pembahasan:</span>
                     <span className="text-slate-700">{feedback.explanation}</span>
                   </div>
@@ -210,13 +272,33 @@ export const QuestionView: React.FC<Props> = ({
             <div className="mt-4 flex gap-2 justify-end">
               {feedback.status === 'correct' || !feedback.canRetry ? (
                 <button
+                  type="button"
                   onClick={handleNext}
-                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-extrabold rounded-xl shadow-md text-sm flex items-center gap-1.5 transition-all active:scale-95"
+                  className={`px-5 py-3 text-white font-extrabold rounded-xl shadow-md text-sm flex items-center gap-2 transition-all active:scale-95 ${
+                    feedback.posCompleted
+                      ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 ring-2 ring-amber-300 ring-offset-1 text-base'
+                      : 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800'
+                  }`}
                 >
-                  Lanjut ke Soal Berikutnya <ArrowRight className="w-4 h-4" />
+                  {feedback.posCompleted ? (
+                    feedback.allCompleted ? (
+                      <>
+                        <Sparkles className="w-5 h-5 text-yellow-300" /> BUKA PETI HARTA KARUN! ➔
+                      </>
+                    ) : (
+                      <>
+                        <Trophy className="w-5 h-5 text-yellow-300" /> MENUJU KE LOKASI BERIKUTNYA ➔
+                      </>
+                    )
+                  ) : (
+                    <>
+                      Lanjut ke Soal Berikutnya <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={handleRetryCurrent}
                   className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-xs"
                 >
@@ -230,18 +312,21 @@ export const QuestionView: React.FC<Props> = ({
         {/* Answer Input Controls (if not answered correctly or if retrying) */}
         {!feedback?.status || feedback.status === 'wrong' ? (
           <div>
-            {question.type === 'isian_angka' ? (
+            {!hasOptions ? (
               <form onSubmit={handleSubmit} className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Ketik Jawaban Angka ({question.unit}):
                 </label>
                 <div className="relative">
                   <input
-                    type="number"
-                    step="any"
+                    type="text"
+                    inputMode="numeric"
                     value={typedAnswer}
-                    onChange={(e) => setTypedAnswer(e.target.value)}
-                    placeholder={`Masukkan angka (satuan ${question.unit})`}
+                    onChange={(e) => {
+                      setTypedAnswer(e.target.value);
+                      if (validationWarning) setValidationWarning(null);
+                    }}
+                    placeholder={`Masukkan angka jawaban (contoh: 64)`}
                     disabled={isSubmitting}
                     className="w-full px-4 py-3.5 bg-amber-50/50 border-2 border-amber-300 focus:border-amber-500 rounded-2xl text-lg font-bold text-slate-900 focus:outline-hidden focus:bg-white transition-colors"
                   />
@@ -266,18 +351,19 @@ export const QuestionView: React.FC<Props> = ({
                         onClick={() => {
                           sounds.playClick();
                           setSelectedOption(option);
+                          if (validationWarning) setValidationWarning(null);
                         }}
                         disabled={isSubmitting}
                         className={`p-3.5 rounded-2xl border-2 text-left font-bold transition-all flex items-center gap-3 ${
                           isSelected
-                            ? 'bg-amber-100 border-amber-500 text-amber-950 shadow-sm scale-101'
+                            ? 'bg-amber-100 border-amber-500 text-amber-950 shadow-sm scale-101 ring-2 ring-amber-400 ring-offset-1'
                             : 'bg-white hover:bg-amber-50/70 border-slate-200 hover:border-amber-300 text-slate-800'
                         }`}
                       >
                         <span
                           className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-extrabold shrink-0 ${
                             isSelected
-                              ? 'bg-amber-500 text-white'
+                              ? 'bg-amber-500 text-white shadow-2xs'
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
@@ -291,19 +377,25 @@ export const QuestionView: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Submit Button */}
+            {/* Submit Button - ALWAYS ACTIVE & CLICKABLE */}
             <div className="pt-3">
               <button
                 type="button"
                 onClick={() => handleSubmit()}
-                disabled={!isAnswerProvided || isSubmitting}
-                className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-98 flex items-center justify-center gap-2 text-base tracking-wide uppercase font-display"
+                disabled={isSubmitting}
+                className="w-full py-4 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white font-extrabold rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-98 flex items-center justify-center gap-2 text-base tracking-wide uppercase font-display cursor-pointer"
               >
                 {isSubmitting ? (
                   <span>Memeriksa Jawaban...</span>
+                ) : isLastQuestionOfPos ? (
+                  <>
+                    <Send className="w-5 h-5" />
+                    <span>SUBMIT JAWABAN & BUKA POS BERIKUTNYA</span>
+                  </>
                 ) : (
                   <>
-                    <Send className="w-5 h-5" /> SUBMIT JAWABAN
+                    <Send className="w-5 h-5" />
+                    <span>SUBMIT JAWABAN</span>
                   </>
                 )}
               </button>

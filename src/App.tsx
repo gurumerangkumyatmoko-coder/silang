@@ -185,48 +185,59 @@ export default function App() {
     const currentQ = currentStationQuestions[currentQuestionIndex];
     const res = await gameService.submitAnswer(session.gameId, currentQ.id, answer, session);
 
-    if (res.isCorrect) {
-      if (res.allCompleted && res.summary) {
-        // Victory!
-        sounds.playTreasureChest();
-        setVictorySummary({
-          summary: res.summary,
-          treasureCode: res.treasureCode || 'MATEMATIKA-HEBAT',
-          teacherMessage:
-            res.teacherMessage ||
-            'Segera temui guru di pos akhir untuk mengambil harta karun aslimu!',
-        });
-        setView('victory');
-        gameService.clearStoredSession();
-      } else if (res.posCompleted && res.nextStation) {
-        // Pos finished! Show celebration and unlocked next station clue
-        sounds.playPosComplete();
-        const justFinishedCode = currentStation?.code || 'POS';
-
-        // Check if next station is the Final Station
-        const isNextFinal = res.nextStation.isFinal;
-
-        setCompletedPosInfo({
-          completedPosCode: justFinishedCode,
-          nextStation: res.nextStation,
-        });
-
-        // Update current station state for next round
-        setCurrentStation({
-          ...res.nextStation,
-          hint: res.nextStation.hint,
-        });
-        setCurrentStationQuestions([]);
-        setCurrentQuestionIndex(0);
-
-        // If next is Final, queue the Final Intro Modal
-        if (isNextFinal) {
-          setIsFinalIntroOpen(true);
-        }
-      }
+    // Keep session score updated immediately in the top bar
+    if (res.isCorrect && res.score !== undefined) {
+      setSession({
+        ...session,
+        score: res.score,
+      });
     }
 
     return res;
+  };
+
+  // Proceed to next station after viewing celebration feedback
+  const handleProceedToNextStation = (res: any) => {
+    if (!res) return;
+
+    if (res.allCompleted && res.summary) {
+      // Grand Victory!
+      sounds.playTreasureChest();
+      setVictorySummary({
+        summary: res.summary,
+        treasureCode: res.treasureCode || 'MATEMATIKA-HEBAT',
+        teacherMessage:
+          res.teacherMessage ||
+          'Segera temui guru di pos akhir untuk mengambil harta karun aslimu!',
+      });
+      setView('victory');
+      gameService.clearStoredSession();
+    } else if (res.posCompleted && res.nextStation) {
+      // Pos finished! Show celebration and unlocked next station clue
+      sounds.playPosComplete();
+      const justFinishedCode = currentStation?.code || 'POS';
+
+      // Check if next station is the Final Station
+      const isNextFinal = res.nextStation.isFinal;
+
+      setCompletedPosInfo({
+        completedPosCode: justFinishedCode,
+        nextStation: res.nextStation,
+      });
+
+      // Update current station state for next round
+      setCurrentStation({
+        ...res.nextStation,
+        hint: res.nextStation.hint,
+      });
+      setCurrentStationQuestions([]);
+      setCurrentQuestionIndex(0);
+
+      // If next is Final, queue the Final Intro Modal
+      if (isNextFinal) {
+        setIsFinalIntroOpen(true);
+      }
+    }
   };
 
   const handleNextQuestion = () => {
@@ -314,6 +325,7 @@ export default function App() {
                 attemptsUsedSoFar={attemptsSoFar}
                 onSubmitAnswer={handleSubmitAnswer}
                 onNextQuestion={handleNextQuestion}
+                onProceedToNextStation={handleProceedToNextStation}
               />
             ) : isQrVerified && currentStationQuestions.length === 0 ? (
               <div className="bg-white rounded-3xl p-8 text-center border-2 border-amber-200">
